@@ -9,6 +9,7 @@ from PIL import Image
 
 OUTPUT_PATH = 'output'
 EXTRACTED_CONTENT_PATH = 'extracted-lsr-content'
+COLOR_MODES = {'jpg': 'RGB', 'png': 'RGBA'}
 
 
 def extract_lsr_content(input_file_path, extracted_content_path=EXTRACTED_CONTENT_PATH):
@@ -24,7 +25,7 @@ def json_file_to_object(path):
 
 
 def generate_images(extracted_content_path=EXTRACTED_CONTENT_PATH, output_path=OUTPUT_PATH, all_combinations=False,
-                    background_layer=False):
+                    background_layer=False, output_type='jpg'):
     lsr_content = json_file_to_object( f"{extracted_content_path}/Contents.json")
     width = lsr_content['properties']['canvasSize']['width']
     height = lsr_content['properties']['canvasSize']['height']
@@ -37,7 +38,7 @@ def generate_images(extracted_content_path=EXTRACTED_CONTENT_PATH, output_path=O
             combinations = [subset for subset in combinations if num_layers in subset]
     
     for combination in combinations:
-        img = Image.new('RGB', (width, height))
+        img = Image.new(COLOR_MODES[output_type], (width, height))
 
         for layer_num in combination[::-1]:
             layer = lsr_content['layers'][layer_num - 1]
@@ -54,7 +55,7 @@ def generate_images(extracted_content_path=EXTRACTED_CONTENT_PATH, output_path=O
 
             for image in layer_image_set_content['images']:
                 image_path = f"{extracted_content_path}/{layer_name}/Content.imageset/{image['filename']}"
-                new_img = Image.open(image_path)
+                new_img = Image.open(image_path).convert('RGBA')
                 img.paste(new_img, (int(layer_center_x - layer_width/2), int(layer_center_y - layer_height/2)), new_img)
 
         try:
@@ -64,7 +65,7 @@ def generate_images(extracted_content_path=EXTRACTED_CONTENT_PATH, output_path=O
                 raise
         
         combination_str = ','.join([str(i) for i in combination])
-        img.save(f"{output_path}/{combination_str}.jpg")
+        img.save(f"{output_path}/{combination_str}.{output_type}")
 
 
 def cleanup(extracted_content_path=EXTRACTED_CONTENT_PATH):
@@ -75,19 +76,22 @@ def cleanup(extracted_content_path=EXTRACTED_CONTENT_PATH):
 @click.argument('input-file-path', type=click.Path(exists=True, dir_okay=False))
 @click.option('-o', '--output-path', type=click.Path(file_okay=False, writable=True), default=OUTPUT_PATH,
               help="Directory to output jpg file(s) to")
+@click.option('-t', '--output-type', type=click.Choice(['jpg', 'png'], case_sensitive=False), default='jpg', help="Output type")
 @click.option('-a', '--all-combinations', type=click.BOOL, default=False, help="For each combination of layers, output a jpg")
 @click.option('-b', '--background-layer', type=click.BOOL, default=False,
               help="Always include the background layer in each combination")
-def lsr_to_jpg(input_file_path, output_path, all_combinations, background_layer):
+def lsr_to_jpg(input_file_path, output_path, all_combinations, background_layer, output_type):
     """Convert an lsr file to a jpg file
 
     INPUT_FILE_PATH     Must be a valid path to an lsr file
     """
-    extract_lsr_content(input_file_path)
+    extracted_content_path = f"{output_path}/{EXTRACTED_CONTENT_PATH}"
+    extract_lsr_content(input_file_path, extracted_content_path=extracted_content_path)
 
-    generate_images(output_path=output_path, all_combinations=all_combinations, background_layer=background_layer)
+    generate_images(extracted_content_path=extracted_content_path, output_path=output_path, all_combinations=all_combinations,
+                    background_layer=background_layer, output_type=output_type)
 
-    cleanup()
+    cleanup(extracted_content_path)
 
 
 if __name__ == "__main__":
